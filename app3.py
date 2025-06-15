@@ -5,65 +5,68 @@ from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import re
 
+st.set_page_config(page_title="Prediksi Cuaca BMKG Bertingkat", layout="wide")
 # ========== Load daftar wilayah dari base.csv ==========
 @st.cache_data
-def get_wilayah_list():
+def load_data_wilayah():
+    """
+    Memuat dan memproses data wilayah dari GitHub sekali saja.
+    Menghitung level administrasi dan membersihkan nama untuk tampilan.
+    """
     url = "https://raw.githubusercontent.com/kodewilayah/permendagri-72-2019/main/dist/base.csv"
     df = pd.read_csv(url, header=None, names=["id", "nama"], dtype=str)
     
-    # Pecah nama: "Ciwidey, Kab. Bandung, Jawa Barat"
-    wilayah = []
-    for _, row in df.iterrows():
-        nama_parts = row["nama"].split(",")
-        kecamatan = nama_parts[0].strip() if len(nama_parts) > 0 else ""
-        kota = nama_parts[1].strip() if len(nama_parts) > 1 else ""
-        wilayah.append({
-            "id": row["id"],
-            "kecamatan": kecamatan,
-            "kota": kota
-        })
-    return wilayah
+    # 0: Provinsi, 1: Kab/Kota, 2: Kecamatan, 3: Kelurahan/Desa
+    df['level'] = df['id'].str.count(r'\.')
+    
+    def clean_name(name):
+        return re.sub(r'^(KAB\. |KOTA |KEC\. |DESA |KEL\. )', '', name).title()
+        
+    df['nama_bersih'] = df['nama'].apply(lambda x: clean_name(x.split(',')[0]))
+    df = df.set_index('id')
+    return df
+
+df_wilayah = load_data_wilayah()
 
 
 # ========== Ambil data cuaca dari BMKG ==========
 @st.cache_data
-def get_bmkg_data(kode_wilayah):
-    url = f"https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4={kode_wilayah}"
-    resp = requests.get(url)
-    if resp.status_code != 200:
-        return pd.DataFrame()
+def get_bmkg_data(kode_wilayah_desa):
+    """Mengambil data prakiraan cuaca dari API BMKG menggunakan kode DESA/KELURAHAN."""
+    kode_api = kode_wilayah_desa
+    url = f"https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4={kode_api}"
+    
+    try:
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        # Mengembalikan error agar bisa ditampilkan di UI
+        return f"Error: Gagal menghubungi server BMKG atau data tidak ditemukan. Pesan: {e}"
 
     j = resp.json()
     data_list = j.get("data", [])
     if not data_list:
-        return pd.DataFrame()
+        return "Error: Tidak ada data cuaca yang dikembalikan oleh BMKG untuk wilayah ini."
 
     cuaca_nested = data_list[0].get("cuaca", [])
     records = []
     for grup in cuaca_nested:
         for entry in grup:
             records.append({
-                "utc":        entry.get("utc_datetime"),
-                "local":      entry.get("local_datetime"),
-                "suhu":       entry.get("t"),
+                "utc": entry.get("utc_datetime"),
+                "local": entry.get("local_datetime"),
+                "suhu": entry.get("t"),
                 "kelembaban": entry.get("hu"),
-                "cuaca":      entry.get("weather_desc"),
-                "ikon":       entry.get("image"),
-                "angin":      entry.get("ws"),
-                "arah_angin": entry.get("wd"),
-                "awan":       entry.get("tcc"),
-                "jarak_pandang": entry.get("vs_text")
+                "cuaca": entry.get("weather_desc"),
             })
     
     df = pd.DataFrame(records)
-    
-    # Convert datetime columns
     if not df.empty:
         df['local'] = pd.to_datetime(df['local'], errors='coerce')
         df['utc'] = pd.to_datetime(df['utc'], errors='coerce')
         df = df.sort_values('local').reset_index(drop=True)
-    
     return df
 
 
@@ -82,25 +85,18 @@ def train_model(df):
 
 # ========== Weather Icon Mapping ==========
 def get_weather_emoji(cuaca_desc):
-    if not cuaca_desc:
-        return "❓"
-    
+    """Memetakan deskripsi cuaca ke emoji."""
+    if not isinstance(cuaca_desc, str): return "❓"
     cuaca_lower = cuaca_desc.lower()
-    if "cerah" in cuaca_lower:
-        return "☀️"
-    elif "berawan" in cuaca_lower:
-        return "☁️"
-    elif "mendung" in cuaca_lower:
-        return "🌫️"
-    elif "hujan" in cuaca_lower:
-        if "lebat" in cuaca_lower:
-            return "🌧️"
-        else:
-            return "🌦️"
-    elif "badai" in cuaca_lower or "petir" in cuaca_lower:
-        return "⛈️"
-    else:
-        return "🌤️"
+    if "cerah berawan" in cuaca_lower: return "🌤️"
+    if "cerah" in cuaca_lower: return "☀️"
+    if "berawan" in cuaca_lower: return "☁️"
+    if "hujan lebat" in cuaca_lower: return "🌧️"
+    if "hujan petir" in cuaca_lower or "badai" in cuaca_lower: return "⛈️"
+    if "hujan ringan" in cuaca_lower: return "🌦️"
+    if "hujan" in cuaca_lower: return "🌧️"
+    if "kabut" in cuaca_lower or "asap" in cuaca_lower: return "🌫️"
+    return "🌏"
 
 
 # ========== Filter data untuk 24 jam ke depan ==========
@@ -121,81 +117,84 @@ def filter_24_hours(df):
 
 
 # ========== Streamlit App ==========
-st.set_page_config(page_title="Prediksi Cuaca BMKG", layout="wide")
-st.title("⛅ Prediksi Cuaca BMKG - Perkiraan 24 Jam")
+st.title("⛅ Prediksi Cuaca Detail per Wilayah")
 
-# Sidebar untuk kontrol
+# Inisialisasi session state untuk semua level
+if 'prov_id' not in st.session_state:
+    st.session_state.prov_id = None
+if 'kab_id' not in st.session_state:
+    st.session_state.kab_id = None
+if 'kec_id' not in st.session_state:
+    st.session_state.kec_id = None
+if 'desa_id' not in st.session_state: # Penambahan state untuk Desa/Kelurahan
+    st.session_state.desa_id = None
+if 'df_cuaca' not in st.session_state:
+    st.session_state.df_cuaca = None # Bisa None, DataFrame, atau String Error
+
+# --- SIDEBAR UNTUK KONTROL ---
 with st.sidebar:
-    st.header("🔧 Pengaturan")
-    wilayah_list = get_wilayah_list()
-    wilayah_names = [f"{w['kecamatan']} - {w['kota']} ({w['id']})" for w in wilayah_list]
+    st.header("📍 Pilih Lokasi Detail")
 
-    selected = st.selectbox("Pilih wilayah", wilayah_names)
-    selected_id = selected.split("(")[-1].replace(")", "")
+    # Pilihan Provinsi
+    df_prov = df_wilayah[df_wilayah['level'] == 0]
+    st.selectbox("Provinsi", options=df_prov.index, format_func=lambda id: df_prov.loc[id, 'nama_bersih'], key="prov_id", index=None, placeholder="Pilih Provinsi...")
 
-    if st.button("🔄 Ambil Data Cuaca", use_container_width=True):
-        with st.spinner("Mengambil data dari BMKG..."):
-            df = get_bmkg_data(selected_id)
+    # Pilihan Kabupaten/Kota
+    if st.session_state.prov_id:
+        df_kab = df_wilayah[(df_wilayah['level'] == 1) & (df_wilayah.index.str.startswith(st.session_state.prov_id + '.'))]
+        st.selectbox("Kabupaten/Kota", options=df_kab.index, format_func=lambda id: df_kab.loc[id, 'nama_bersih'], key="kab_id", index=None, placeholder="Pilih Kabupaten/Kota...")
 
-            if not df.empty:
-                st.session_state.df = df
-                st.session_state.model = train_model(df)
-                st.success("✅ Data berhasil diambil!")
-            else:
-                st.error("❌ Tidak ada data cuaca tersedia.")
+    # Pilihan Kecamatan
+    if st.session_state.kab_id:
+        df_kec = df_wilayah[(df_wilayah['level'] == 2) & (df_wilayah.index.str.startswith(st.session_state.kab_id + '.'))]
+        st.selectbox("Kecamatan", options=df_kec.index, format_func=lambda id: df_kec.loc[id, 'nama_bersih'], key="kec_id", index=None, placeholder="Pilih Kecamatan...")
 
-# Main content
-col1, col2 = st.columns([2, 1])
+    # --- PERUBAHAN KUNCI: Pilihan Desa/Kelurahan ---
+    if st.session_state.kec_id:
+        df_desa = df_wilayah[(df_wilayah['level'] == 3) & (df_wilayah.index.str.startswith(st.session_state.kec_id + '.'))]
+        st.selectbox("Desa/Kelurahan", options=df_desa.index, format_func=lambda id: df_desa.loc[id, 'nama_bersih'], key="desa_id", index=None, placeholder="Pilih Desa/Kelurahan...")
 
-with col1:
-    # Jika data sudah tersedia, tampilkan perkiraan cuaca
-    if "df" in st.session_state and not st.session_state.df.empty:
-        df_24h = filter_24_hours(st.session_state.df)
-        
-        if not df_24h.empty:
-            st.subheader("🕐 Perkiraan Cuaca 24 Jam Ke Depan")
-            
-            # Tampilkan dalam format kartu per jam
-            st.markdown("### 📅 Timeline Cuaca")
-            
-            # Buat grid untuk menampilkan cuaca per jam
-            cols_per_row = 4
-            rows = []
-            current_row = []
-            
-            for idx, row in df_24h.iterrows():
-                if pd.notna(row['local']):
-                    jam = row['local'].strftime('%H:%M')
-                    tanggal = row['local'].strftime('%d/%m')
-                    suhu = f"{row['suhu']}°C" if pd.notna(row['suhu']) else "N/A"
-                    kelembaban = f"{row['kelembaban']}%" if pd.notna(row['kelembaban']) else "N/A"
-                    cuaca = row['cuaca'] if pd.notna(row['cuaca']) else "N/A"
-                    emoji = get_weather_emoji(cuaca)
-                    
-                    current_row.append({
-                        'jam': jam,
-                        'tanggal': tanggal,
-                        'emoji': emoji,
-                        'suhu': suhu,
-                        'kelembaban': kelembaban,
-                        'cuaca': cuaca
-                    })
-                    
-                    if len(current_row) == cols_per_row:
-                        rows.append(current_row)
-                        current_row = []
-            
-            # Tambahkan sisa data jika ada
-            if current_row:
-                rows.append(current_row)
-            
-            # Tampilkan grid cuaca
-            for row_data in rows:
-                cols = st.columns(len(row_data))
-                for i, data in enumerate(row_data):
-                    with cols[i]:
-                        st.markdown(f"""
-                        <div style="
+    # Tombol ambil data aktif jika desa/kelurahan sudah dipilih
+    if st.session_state.desa_id:
+        if st.button("🌦️ Ambil Data Cuaca", use_container_width=True, type="primary"):
+            desa_nama = df_wilayah.loc[st.session_state.desa_id, 'nama_bersih']
+            with st.spinner(f"Mengambil data untuk {desa_nama}..."):
+                st.session_state.df_cuaca = get_bmkg_data(st.session_state.desa_id)
+    else:
+        st.info("Pilih wilayah hingga level Desa/Kelurahan untuk mengambil data.")
+
+
+# --- KONTEN UTAMA ---
+# Cek hasil dari session state
+hasil_cuaca = st.session_state.df_cuaca
+
+if hasil_cuaca is None:
+    st.info("👈 Silakan lengkapi pilihan wilayah di sidebar untuk menampilkan data cuaca.")
+elif isinstance(hasil_cuaca, str): # Jika ada pesan error dari fungsi get_bmkg_data
+    st.error(hasil_cuaca)
+elif not hasil_cuaca.empty:
+    df_cuaca = hasil_cuaca
+    nama_lokasi = f"{df_wilayah.loc[st.session_state.desa_id, 'nama_bersih']}, Kec. {df_wilayah.loc[st.session_state.kec_id, 'nama_bersih']}"
+    st.subheader(f"Perkiraan Cuaca untuk: {nama_lokasi}")
+
+    # Tampilan kartu cuaca (sama seperti sebelumnya)
+    cols_per_row = 6
+    df_display = df_cuaca.head(12)
+    for i in range(0, len(df_display), cols_per_row):
+        cols = st.columns(cols_per_row)
+        chunk = df_display.iloc[i:i+cols_per_row]
+        for idx, col in enumerate(cols):
+            if idx < len(chunk):
+                row = chunk.iloc[idx]
+                jam = row['local'].strftime('%H:%M')
+                tanggal = row['local'].strftime('%d %b %Y')
+                suhu = f"{row['suhu']}°C"
+                kelembaban = f"{row['kelembaban']}%"
+                cuaca = row['cuaca']
+                emoji = get_weather_emoji(cuaca)
+                with col:
+                    st.markdown(f"""
+                    <div style="
                             border: 1px solid #ddd;
                             border-radius: 10px;
                             padding: 15px;
@@ -203,104 +202,27 @@ with col1:
                             background-color: #f8f9fa;
                             margin: 5px;
                         ">
-                            <h3 style="margin: 0; color: #333;">{data['emoji']}</h3>
-                            <p style="margin: 5px 0; font-weight: bold; color: #666;">{data['jam']}</p>
-                            <p style="margin: 2px 0; font-size: 12px; color: #888;">{data['tanggal']}</p>
-                            <p style="margin: 5px 0; font-weight: bold; color: #e74c3c;">{data['suhu']}</p>
-                            <p style="margin: 2px 0; font-size: 12px; color: #3498db;">{data['kelembaban']}</p>
-                            <p style="margin: 5px 0; font-size: 11px; color: #27ae60;">{data['cuaca']}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-            
-            # Grafik suhu dan kelembaban dengan matplotlib
-            st.subheader("📊 Grafik Suhu dan Kelembaban")
-            
-            if len(df_24h) > 1:
-                fig, ax1 = plt.subplots(figsize=(12, 6))
-                
-                # Plot suhu
-                color = 'tab:red'
-                ax1.set_xlabel('Waktu')
-                ax1.set_ylabel('Suhu (°C)', color=color)
-                ax1.plot(df_24h['local'], df_24h['suhu'], color=color, marker='o', linewidth=2, label='Suhu')
-                ax1.tick_params(axis='y', labelcolor=color)
-                ax1.grid(True, alpha=0.3)
-                
-                # Format x-axis untuk menampilkan jam
-                ax1.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-                ax1.xaxis.set_major_locator(mdates.HourLocator(interval=2))
-                plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45)
-                
-                # Plot kelembaban pada sumbu y kedua
-                ax2 = ax1.twinx()
-                color = 'tab:blue'
-                ax2.set_ylabel('Kelembaban (%)', color=color)
-                ax2.plot(df_24h['local'], df_24h['kelembaban'], color=color, marker='s', linewidth=2, label='Kelembaban')
-                ax2.tick_params(axis='y', labelcolor=color)
-                
-                # Judul dan layout
-                plt.title('Perkiraan Suhu dan Kelembaban 24 Jam', fontsize=16, fontweight='bold')
-                plt.tight_layout()
-                
-                # Tambahkan legenda
-                lines1, labels1 = ax1.get_legend_handles_labels()
-                lines2, labels2 = ax2.get_legend_handles_labels()
-                ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
-                
-                st.pyplot(fig)
-                plt.close()  # Tutup figure untuk menghemat memori
-                
-        else:
-            st.info("📅 Tidak ada data cuaca untuk 24 jam ke depan.")
-            
-        # Tampilkan tabel data lengkap
-        st.subheader("📋 Data Cuaca Lengkap")
-        st.dataframe(st.session_state.df[['local', 'suhu', 'kelembaban', 'cuaca', 'angin', 'arah_angin']].head(20))
-        
-    else:
-        st.info("👈 Silakan pilih wilayah dan klik 'Ambil Data Cuaca' di sidebar untuk melihat perkiraan cuaca.")
+                        <h2 style="font-size: 2.5em; margin: 0;">{emoji}</h2>
+                        <p style="font-weight: bold; font-weight: bold; color: #666;">{jam}</p>
+                        <p style="margin: 2px 0; font-size: 12px; color: #888;">{tanggal}</p>
+                        <p style="font-weight: bold; color: #e74c3c; margin-top: 5px;">{suhu}</p>
+                        <p style="margin: 2px 0; font-size: 12px; color: #3498db;">{kelembaban}</p>
+                        <p style="font-size: 0.8em; color: #555; height: 30px;">{cuaca}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-with col2:
-    # Panel prediksi manual (tetap dipertahankan)
-    if "df" in st.session_state and "model" in st.session_state and st.session_state.model:
-        st.subheader("🧠 Prediksi Manual")
-        st.markdown("Masukkan nilai suhu dan kelembaban untuk prediksi cuaca:")
-        
-        input_suhu = st.slider("Suhu (°C)", 10, 40, 28)
-        input_kelembaban = st.slider("Kelembaban (%)", 20, 100, 70)
-
-        if st.button("🔍 Prediksi", use_container_width=True):
-            df_input = pd.DataFrame([{
-                "suhu": input_suhu,
-                "kelembaban": input_kelembaban
-            }])
-            hasil = st.session_state.model.predict(df_input)[0]
-            emoji = get_weather_emoji(hasil)
-            
-            st.markdown(f"""
-            <div style="
-                border: 2px solid #27ae60;
-                border-radius: 10px;
-                padding: 20px;
-                text-align: center;
-                background-color: #d5f4e6;
-                margin: 10px 0;
-            ">
-                <h2 style="margin: 0; color: #27ae60;">{emoji}</h2>
-                <h4 style="margin: 10px 0; color: #27ae60;">Prediksi Cuaca:</h4>
-                <h3 style="margin: 0; color: #2c3e50;">{hasil}</h3>
-            </div>
-            """, unsafe_allow_html=True)
-    
-    # Info tambahan
-    if "df" in st.session_state and not st.session_state.df.empty:
-        st.subheader("📈 Statistik Data")
-        df_stats = st.session_state.df[['suhu', 'kelembaban']].describe()
-        st.dataframe(df_stats)
-        
-        st.subheader("🌤️ Jenis Cuaca")
-        if 'cuaca' in st.session_state.df.columns:
-            cuaca_counts = st.session_state.df['cuaca'].value_counts()
-            for cuaca, count in cuaca_counts.head(5).items():
-                emoji = get_weather_emoji(cuaca)
-                st.write(f"{emoji} {cuaca}: {count}x")
+    # Grafik Suhu (sama seperti sebelumnya)
+    st.subheader("📊 Grafik Perkiraan Suhu")
+    if len(df_cuaca) > 1:
+        fig, ax = plt.subplots(figsize=(12, 5))
+        ax.plot(df_cuaca['local'], df_cuaca['suhu'], color='tab:red', marker='o', linewidth=2)
+        ax.set_xlabel('Waktu')
+        ax.set_ylabel('Suhu (°C)', color='tab:red')
+        ax.tick_params(axis='y', labelcolor='tab:red')
+        ax.grid(True, alpha=0.3)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M\n%d-%b'))
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=0)
+        st.pyplot(fig)
+        plt.close(fig)
+else:
+    st.warning("Tidak ada data cuaca yang dapat ditampilkan untuk wilayah ini.")
