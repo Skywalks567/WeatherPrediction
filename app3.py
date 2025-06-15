@@ -2,14 +2,61 @@ import streamlit as st
 import pandas as pd
 import requests
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.cluster import KMeans
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import re
 
-
-
 st.set_page_config(page_title="Prediksi Cuaca BMKG Bertingkat", layout="wide")
+
+def default_theme():
+    """
+    Menyuntikkan CSS untuk tema default "Langit Fajar" dan sidebar "frosted glass".
+    """
+    default_css = """
+    <style>
+        /* Keyframes untuk animasi gradien */
+        @keyframes gradient_animation {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* Latar Belakang Utama Aplikasi (Default) */
+        .stApp {
+            background: linear-gradient(-45deg, #5D8736, #809D3C, #A9C46C, #F4FFC3);
+            background-size: 400% 400%;
+            animation: gradient_animation 20s ease infinite;
+        }
+
+        /* Sidebar dengan Efek Frosted Glass */
+        [data-testid="stSidebar"] {
+            background: rgba(255, 255, 255, 0.15); /* Warna putih semi-transparan */
+            backdrop-filter: blur(10px); /* Efek blur */
+            border-right: 1px solid rgba(255, 255, 255, 0.2); /* Border halus */
+        }
+        
+        /* Konten Utama agar sedikit transparan dan rounded */
+        [data-testid="stAppViewContainer"] > .main {
+            background-color: rgba(255, 255, 255, 0.92);
+            border-radius: 15px;
+        }
+        
+        /* Mengubah warna teks default di sidebar agar lebih gelap dan terbaca */
+        [data-testid="stSidebar"] .st-emotion-cache-16txtl3 {
+            color: #1f2937;
+        }
+        [data-testid="stSidebar"] h1, 
+        [data-testid="stSidebar"] h2, 
+        [data-testid="stSidebar"] h3 {
+            color: #111827;
+        }
+    </style>
+    """
+    st.markdown(default_css, unsafe_allow_html=True)
+
+default_theme()
 
 def filter_24_hours(df):
     """Memfilter DataFrame untuk menampilkan data 24 jam dari sekarang."""
@@ -149,7 +196,7 @@ def get_gradient_color(cuaca_desc):
     if "cerah berawan" in cuaca_lower:
         return "background: linear-gradient(to bottom, #d0ecff, #90caf9);"  # biru muda → biru langit
     elif "cerah" in cuaca_lower:
-        return "background: linear-gradient(to bottom, #fff176, #fbc02d);"  # biru cerah
+        return "background: linear-gradient(to bottom, #fff176, #fbc02d);"  # kuning
     elif "berawan" in cuaca_lower and "cerah" not in cuaca_lower:
         return "background: linear-gradient(to bottom, #e0e0e0, #9e9e9e);"  # abu terang → medium
     elif "kabut" in cuaca_lower or "asap" in cuaca_lower or "udara kabur" in cuaca_lower:
@@ -277,6 +324,68 @@ def get_text_styles(cuaca_desc):
         "jam": "color: #cfd8dc;"
     }
 
+def hex_to_rgb(hex_color):
+    """Konversi warna hex (#RRGGBB) ke tuple RGB."""
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+def get_dominant_colors(df_display, num_colors=3):
+    """
+    Menganalisis warna dari kartu-kartu yang ditampilkan dan menemukan N warna dominan.
+    """
+    all_colors_hex = []
+    # Kumpulkan semua warna dari gradien kartu
+    for _, row in df_display.iterrows():
+        grad_css = get_gradient_color(row['cuaca'])
+        # Ekstrak warna hex dari string CSS
+        hex_codes = re.findall(r'#(?:[0-9a-fA-F]{6})', grad_css)
+        all_colors_hex.extend(hex_codes)
+    
+    if not all_colors_hex:
+        return ["#6dd5ed", "#2193b0", "#B0BEC5"] # Fallback default
+
+    # Konversi hex ke RGB untuk clustering
+    all_colors_rgb = [hex_to_rgb(c) for c in all_colors_hex]
+    
+    # Gunakan KMeans untuk menemukan N cluster warna
+    kmeans = KMeans(n_clusters=num_colors, random_state=42, n_init='auto')
+    kmeans.fit(all_colors_rgb)
+    
+    # Pusat cluster adalah warna dominan kita (dalam RGB)
+    dominant_rgb = kmeans.cluster_centers_.astype(int)
+    
+    # Konversi kembali ke hex untuk digunakan di CSS
+    dominant_hex = [f"#{r:02x}{g:02x}{b:02x}" for r, g, b in dominant_rgb]
+    return dominant_hex
+
+def get_page_background_style(colors):
+    """Membuat CSS untuk latar belakang gradien animasi dari 3 warna."""
+    if len(colors) < 3:
+        colors = ["#6dd5ed", "#2193b0", "#B0BEC5"] # Fallback
+
+    return f"""
+    <style>
+    @keyframes gradient {{
+        0% {{ background-position: 0% 50%; }}
+        50% {{ background-position: 100% 50%; }}
+        100% {{ background-position: 0% 50%; }}
+    }}
+    .stApp {{
+        background: linear-gradient(-45deg, {colors[0]}, {colors[1]}, {colors[2]});
+        background-size: 400% 400%;
+        animation: gradient 15s ease infinite;
+    }}
+    /* Membuat elemen utama sedikit transparan agar background terlihat */
+    [data-testid="stAppViewContainer"] > .main {{
+        background-color: rgba(255, 255, 255, 0.92);
+        border-radius: 15px;
+    }}
+    .st-emotion-cache-16txtl3 {{
+        padding: 2rem 2rem;
+    }}
+
+    </style>
+    """
 
 # ========== Filter data untuk 24 jam ke depan ==========
 def filter_24_hours(df):
@@ -313,7 +422,6 @@ if 'df_cuaca' not in st.session_state:
 # --- SIDEBAR UNTUK KONTROL ---
 with st.sidebar:
     st.header("📍 Pilih Lokasi Detail")
-
     # Pilihan Provinsi
     df_prov = df_wilayah[df_wilayah['level'] == 0]
     st.selectbox("Provinsi", options=df_prov.index, format_func=lambda id: df_prov.loc[id, 'nama_bersih'], key="prov_id",on_change=reset_selections_on_kec_change, index=None, placeholder="Pilih Provinsi...")
@@ -369,6 +477,14 @@ with col1:
         # Tampilan kartu cuaca (sama seperti sebelumnya)
         cols_per_row = 4
         df_display = df_cuaca.head(8)
+
+        # 1. Dapatkan 3 warna dominan dari 8 kartu yang akan ditampilkan
+        dominant_colors = get_dominant_colors(df_display, num_colors=3)
+        
+        # 2. Buat dan suntikkan CSS untuk latar belakang halaman
+        page_bg_css = get_page_background_style(dominant_colors)
+        st.markdown(page_bg_css, unsafe_allow_html=True)
+
         for i in range(0, len(df_display), cols_per_row):
             cols = st.columns(cols_per_row)
             chunk = df_display.iloc[i:i+cols_per_row]
@@ -513,6 +629,10 @@ with col2:
         st.subheader("🌤️ Jenis Cuaca")
         if 'cuaca' in df_cuaca.columns:
             cuaca_counts = df_cuaca['cuaca'].value_counts()
+            if 'cuaca' in df_cuaca.columns and not df_cuaca['cuaca'].isnull().all():
+                cuaca_dominan = df_cuaca['cuaca'].value_counts().idxmax()
+                style_background_page = get_page_background_style(cuaca_dominan)
+                st.markdown(style_background_page, unsafe_allow_html=True)
             
             with st.container(border=True):
                 for cuaca, count in cuaca_counts.head(5).items():
