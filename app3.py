@@ -460,7 +460,7 @@ with col1:
         st.error(hasil_cuaca)
     elif not hasil_cuaca.empty:
         df_cuaca = hasil_cuaca
-        nama_lokasi = f"{df_wilayah.loc[st.session_state.desa_id, 'nama_bersih']}, Kec. {df_wilayah.loc[st.session_state.kec_id, 'nama_bersih']}"
+        nama_lokasi = f"{df_wilayah.loc[st.session_state.desa_id, 'nama_bersih']}, Kec. {df_wilayah.loc[st.session_state.kec_id, 'nama_bersih']}, Kab. {df_wilayah.loc[st.session_state.kab_id, 'nama_bersih']}, Prov. {df_wilayah.loc[st.session_state.prov_id, 'nama_bersih']}"
         st.subheader(f"Perkiraan Cuaca untuk: {nama_lokasi}")
 
         # Tampilan kartu cuaca (sama seperti sebelumnya)
