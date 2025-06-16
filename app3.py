@@ -11,39 +11,31 @@ import re
 st.set_page_config(page_title="Prediksi Cuaca BMKG Bertingkat", layout="wide")
 
 def default_theme():
-    """
-    Menyuntikkan CSS untuk tema default "Langit Fajar" dan sidebar "frosted glass".
-    """
     default_css = """
     <style>
-        /* Keyframes untuk animasi gradien */
         @keyframes gradient_animation {
             0% { background-position: 0% 50%; }
             50% { background-position: 100% 50%; }
             100% { background-position: 0% 50%; }
         }
 
-        /* Latar Belakang Utama Aplikasi (Default) */
         .stApp {
-            background: linear-gradient(-45deg, #5D8736, #809D3C, #A9C46C, #F4FFC3);
+            background: linear-gradient(-45deg, #F8FAFC, #D9EAFD, #BCCCDC, #9AA6B2);
             background-size: 400% 400%;
             animation: gradient_animation 20s ease infinite;
         }
 
-        /* Sidebar dengan Efek Frosted Glass */
-        [data-testid="stSidebar"] {
-            background: rgba(255, 255, 255, 0.15); /* Warna putih semi-transparan */
-            backdrop-filter: blur(10px); /* Efek blur */
-            border-right: 1px solid rgba(255, 255, 255, 0.2); /* Border halus */
+        [data-testid="stSidebar"]{
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(255, 255, 255, 0.2);
         }
         
-        /* Konten Utama agar sedikit transparan dan rounded */
         [data-testid="stAppViewContainer"] > .main {
             background-color: rgba(255, 255, 255, 0.92);
             border-radius: 15px;
         }
         
-        /* Mengubah warna teks default di sidebar agar lebih gelap dan terbaca */
         [data-testid="stSidebar"] .st-emotion-cache-16txtl3 {
             color: #1f2937;
         }
@@ -51,6 +43,30 @@ def default_theme():
         [data-testid="stSidebar"] h2, 
         [data-testid="stSidebar"] h3 {
             color: #111827;
+        }
+
+        div[data-baseweb="select"] > div {
+            background-color: rgb(165, 192, 221, 0.3);
+            border: 2px solid rgb(165, 192, 221, 0.1);
+            border-radius: 8px;
+            color: black;
+            backdrop-filter: blur(50px);
+            -webkit-backdrop-filter: blur(10px); 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1); 
+        }
+        
+        .stDataFrame div[data-testid="stHorizontalBlock"] {
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 10px;
+            padding: 10px;
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        .stDataFrame td {
+            font-size: 14px;
+            border: 1px solid #ccc;
         }
     </style>
     """
@@ -189,133 +205,123 @@ def get_weather_emoji(cuaca_desc):
 # ========== Weather Color Mapping ==========
 def get_gradient_color(cuaca_desc):
     if not isinstance(cuaca_desc, str):
-        return "background: linear-gradient(to bottom, #eeeeee, #cccccc);"  # default abu
+        return "background: linear-gradient(to bottom, #eeeeee, #cccccc);"
 
     cuaca_lower = cuaca_desc.lower()
 
     if "cerah berawan" in cuaca_lower:
-        return "background: linear-gradient(to bottom, #d0ecff, #90caf9);"  # biru muda → biru langit
+        return "background: linear-gradient(to bottom, #d0ecff, #90caf9);"
     elif "cerah" in cuaca_lower:
-        return "background: linear-gradient(to bottom, #fff176, #fbc02d);"  # kuning
+        return "background: linear-gradient(to bottom, #fff176, #fbc02d);"
     elif "berawan" in cuaca_lower and "cerah" not in cuaca_lower:
-        return "background: linear-gradient(to bottom, #e0e0e0, #9e9e9e);"  # abu terang → medium
+        return "background: linear-gradient(to bottom, #e0e0e0, #9e9e9e);"
     elif "kabut" in cuaca_lower or "asap" in cuaca_lower or "udara kabur" in cuaca_lower:
-        return "background: linear-gradient(to bottom, #d7ccc8, #a1887f);"  # coklat keabu-abuan → redup
+        return "background: linear-gradient(to bottom, #d7ccc8, #a1887f);"
     elif "hujan lebat" in cuaca_lower:
-        return "background: linear-gradient(to bottom, #a9a9a9, #404040);"  # abu tua
+        return "background: linear-gradient(to bottom, #a9a9a9, #404040);"
 
     # ⛈️ Hujan Petir / Badai
     elif "badai" in cuaca_lower or "petir" in cuaca_lower or "hujan petir" in cuaca_lower:
-        return "background: linear-gradient(to bottom, #888888, #2c3e50);"  # abu → hitam keabuan
+        return "background: linear-gradient(to bottom, #888888, #2c3e50);"
 
     # 🌦️ Hujan Ringan
     elif "hujan ringan" in cuaca_lower:
-        return "background: linear-gradient(to bottom, #d0d0d0, #888888);"  # abu terang → gelap
+        return "background: linear-gradient(to bottom, #d0d0d0, #888888);"
 
     # 🌧️ Hujan (umum)
     elif "hujan" in cuaca_lower:
-        return "background: linear-gradient(to bottom, #cfd8dc, #78909c);"  # biru abu → biru kelabu
+        return "background: linear-gradient(to bottom, #cfd8dc, #78909c);" 
 
     # Mendung eksplisit
     elif "mendung" in cuaca_lower:
-        return "background: linear-gradient(to bottom, #b0b0b0, #707070);"  # abu medium → gelap
-    return "background: linear-gradient(to bottom, #e7f4ff, #cceeff);"  # biru langit soft
+        return "background: linear-gradient(to bottom, #b0b0b0, #707070);" 
+    return "background: linear-gradient(to bottom, #e7f4ff, #cceeff);" 
 
 # ========== Timeline Text Mapping ==========    
 def get_text_styles(cuaca_desc):
     cuaca_lower = cuaca_desc.lower() if cuaca_desc else ""
 
-    # ☀️ Cerah → kuning keemasan
     if "cerah" in cuaca_lower and "berawan" not in cuaca_lower:
         return {
-            "cuaca": "color: #f57f17;",         # orange tua
-            "kelembaban": "color: #4e342e;",    # coklat tua
-            "suhu": "color: #bf360c;",          # merah bata
-            "tanggal": "color: #6d4c41;",       # coklat gelap
-            "jam": "color: #ff8f00;"            # orange terang (kontras)
+            "cuaca": "color: #f57f17;",   
+            "kelembaban": "color: #4e342e;",  
+            "suhu": "color: #bf360c;",    
+            "tanggal": "color: #6d4c41;", 
+            "jam": "color: #ff8f00;"   
         }
 
-    # 🌤️ Cerah Berawan → biru langit
     elif "cerah berawan" in cuaca_lower:
         return {
             "cuaca": "color: #01579b;",         
             "kelembaban": "color: #0277bd;",    
             "suhu": "color: #0288d1;",          
             "tanggal": "color: #0288d1;",       
-            "jam": "color: #039be5;"            # biru muda terang
+            "jam": "color: #039be5;"  
         }
 
-    # ☁️ Berawan
     elif "berawan" in cuaca_lower and "cerah" not in cuaca_lower:
         return {
             "cuaca": "color: #eeeeee;",         
             "kelembaban": "color: #cce7ff;",    
             "suhu": "color: #ffcdd2;",          
             "tanggal": "color: #e0f7fa;",
-            "jam": "color: #b3e5fc;"            # biru pucat
+            "jam": "color: #b3e5fc;" 
         }
 
-    # 🌫️ Kabut / Asap
     elif "kabut" in cuaca_lower or "asap" in cuaca_lower or "udara kabur" in cuaca_lower:
         return {
-            "cuaca":      "color: #3E2723;",  # Coklat paling gelap, hampir hitam
-            "kelembaban": "color: #00695C;",  # Teal (biru kehijauan) gelap untuk kelembaban
-            "suhu":       "color: #E65100;",  # Oranye/Amber tua untuk suhu
-            "tanggal":    "color: #795548;",  # Coklat medium
-            "jam":        "color: #A1887F;"   # Coklat muda            # coklat muda
+            "cuaca":      "color: #3E2723;", 
+            "kelembaban": "color: #00695C;", 
+            "suhu":       "color: #E65100;",
+            "tanggal":    "color: #795548;", 
+            "jam":        "color: #A1887F;" 
         }
 
-    # 🌧️ Hujan Lebat
     elif "hujan lebat" in cuaca_lower:
         return {
             "cuaca": "color: #e0f2f1;",         
             "kelembaban": "color: #b2dfdb;",    
             "suhu": "color: #ef9a9a;",          
             "tanggal": "color: #f5f5f5;",
-            "jam": "color: #b2ebf2;"            # cyan muda
+            "jam": "color: #b2ebf2;"
         }
 
-    # ⛈️ Badai / Petir
     elif "badai" in cuaca_lower or "petir" in cuaca_lower or "hujan petir" in cuaca_lower:
         return {
             "cuaca": "color: #bbdefb;",         
             "kelembaban": "color: #ffcc80;",    
             "suhu": "color: #ef9a9a;",          
             "tanggal": "color: #e0e0e0;",
-            "jam": "color: #fff176;"            # kuning terang (kontras dengan gelap)
+            "jam": "color: #fff176;"
         }
 
-    # 🌦️ Hujan Ringan
     elif "hujan ringan" in cuaca_lower:
         return {
             "cuaca": "color: #455a64;",         
             "kelembaban": "color: #bbdefb;",    
             "suhu": "color: #ef9a9a;",          
             "tanggal": "color: #eceff1;",
-            "jam": "color: #666;"            # abu terang kebiruan
+            "jam": "color: #666;" 
         }
 
-    # 🌧️ Hujan Umum
     elif "hujan" in cuaca_lower:
         return {
             "cuaca": "color: #546e7a;",         
             "kelembaban": "color: #78909c;",    
             "suhu": "color: #ff8a80;",          
             "tanggal": "color: #eceff1;",
-            "jam": "color: #b0bec5;"            # abu biru soft
+            "jam": "color: #b0bec5;"  
         }
 
-    # ☁️ Mendung eksplisit
     elif "mendung" in cuaca_lower:
         return {
             "cuaca": "color: #757575;",
             "kelembaban": "color: #9e9e9e;",
             "suhu": "color: #e57373;",
             "tanggal": "color: #cfd8dc;",
-            "jam": "color: #bdbdbd;"            # abu terang
+            "jam": "color: #bdbdbd;"
         }
-
-    # 🌏 Default
+    
     return {
         "cuaca": "color: #37474f;",             
         "kelembaban": "color: #90a4ae;",        
@@ -351,7 +357,7 @@ def get_dominant_colors(df_display, num_colors=3):
     kmeans = KMeans(n_clusters=num_colors, random_state=42, n_init='auto')
     kmeans.fit(all_colors_rgb)
     
-    # Pusat cluster adalah warna dominan kita (dalam RGB)
+    # Pusat cluster adalah warna dominan (dalam RGB)
     dominant_rgb = kmeans.cluster_centers_.astype(int)
     
     # Konversi kembali ke hex untuk digunakan di CSS
@@ -375,7 +381,7 @@ def get_page_background_style(colors):
         background-size: 400% 400%;
         animation: gradient 15s ease infinite;
     }}
-    /* Membuat elemen utama sedikit transparan agar background terlihat */
+
     [data-testid="stAppViewContainer"] > .main {{
         background-color: rgba(255, 255, 255, 0.92);
         border-radius: 15px;
@@ -387,23 +393,6 @@ def get_page_background_style(colors):
     </style>
     """
 
-# ========== Filter data untuk 24 jam ke depan ==========
-def filter_24_hours(df):
-    if df.empty:
-        return df
-    
-    now = datetime.now()
-    next_24h = now + timedelta(hours=24)
-    
-    # Filter data dalam 24 jam ke depan
-    df_filtered = df[
-        (df['local'] >= now) & 
-        (df['local'] <= next_24h)
-    ].copy()
-    
-    return df_filtered
-
-
 # ========== Streamlit App ==========
 st.title("⛅ Prediksi Cuaca Detail per Wilayah")
 
@@ -414,10 +403,10 @@ if 'kab_id' not in st.session_state:
     st.session_state.kab_id = None
 if 'kec_id' not in st.session_state:
     st.session_state.kec_id = None
-if 'desa_id' not in st.session_state: # Penambahan state untuk Desa/Kelurahan
+if 'desa_id' not in st.session_state:
     st.session_state.desa_id = None
 if 'df_cuaca' not in st.session_state:
-    st.session_state.df_cuaca = None # Bisa None, DataFrame, atau String Error
+    st.session_state.df_cuaca = None
 
 # --- SIDEBAR UNTUK KONTROL ---
 with st.sidebar:
@@ -481,7 +470,7 @@ with col1:
         # 1. Dapatkan 3 warna dominan dari 8 kartu yang akan ditampilkan
         dominant_colors = get_dominant_colors(df_display, num_colors=3)
         
-        # 2. Buat dan suntikkan CSS untuk latar belakang halaman
+        # 2. CSS untuk latar belakang halaman
         page_bg_css = get_page_background_style(dominant_colors)
         st.markdown(page_bg_css, unsafe_allow_html=True)
 
@@ -544,10 +533,10 @@ with col1:
                         </div>
                         """, unsafe_allow_html=True)
 
-        # Grafik Suhu (sama seperti sebelumnya)
+        # Grafik Suhu
         st.subheader("📊 Grafik Perkiraan 24 Jam ke Depan")
 
-        # Filter data untuk 24 jam ke depan menggunakan fungsi yang baru ditambahkan
+        # Filter data untuk 24 jam
         df_24h = filter_24_hours(df_cuaca)
 
         if len(df_24h) > 1:
@@ -561,7 +550,7 @@ with col1:
             ax1.tick_params(axis='y', labelcolor=color)
             ax1.grid(True, which='major', linestyle='--', linewidth='0.5', color='grey')
             
-            # Format sumbu X untuk menampilkan jam dengan interval 2 jam
+            # Format sumbu X untuk menampilkan jam dengan interval 3 jam
             ax1.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
             ax1.xaxis.set_major_locator(mdates.HourLocator(interval=3))
             plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45, ha="right")
@@ -624,17 +613,61 @@ with col2:
         # Info tambahan
         st.subheader("📈 Statistik Data")
         df_stats = df_cuaca[['suhu', 'kelembaban']].describe()
-        st.dataframe(df_stats)
         
-        st.subheader("🌤️ Jenis Cuaca")
+        html_table = df_stats.to_html(classes="custom-blur-table", border=0)
+
+        # Inject CSS
+        st.markdown("""
+            <style>
+            .custom-blur-table {
+                width: 100%;
+                border-collapse: collapse;
+                background: rgba(255, 255, 255, 0.2);
+                backdrop-filter: blur(10px);
+                -webkit-backdrop-filter: blur(10px);
+                border-radius: 12px;
+                overflow: hidden;
+                font-size: 14px;
+                color: black;
+            }
+
+            .custom-blur-table th {
+                background-color: rgb(108, 155, 207, 0.3);
+                color: white;
+                padding: 10px;
+            }
+
+            .custom-blur-table td {
+                padding: 8px;
+                border: 1px solid rgba(255, 255, 255, 0.4);
+                text-align: center;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        # Tampilkan HTML-nya
+        st.markdown(html_table, unsafe_allow_html=True)
+        # st.dataframe(df_stats)
+    
         if 'cuaca' in df_cuaca.columns:
             cuaca_counts = df_cuaca['cuaca'].value_counts()
             if 'cuaca' in df_cuaca.columns and not df_cuaca['cuaca'].isnull().all():
                 cuaca_dominan = df_cuaca['cuaca'].value_counts().idxmax()
                 style_background_page = get_page_background_style(cuaca_dominan)
-                st.markdown(style_background_page, unsafe_allow_html=True)
+                st.markdown(style_background_page, unsafe_allow_html=True)\
+            
+            st.markdown(f"""
+                <style>
+                .st-emotion-cache-1d8vwwt.e1lln2w84, #Jenis-Cuaca{{
+                    background: rgba(255, 255, 255, 0.15);
+                    backdrop-filter: blur(10px);
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                }}
+                </style>
+                """, unsafe_allow_html=True)
             
             with st.container(border=True):
+                st.subheader("🌤️ Jenis Cuaca")
                 for cuaca, count in cuaca_counts.head(5).items():
                     emoji = get_weather_emoji(cuaca)
                     st.write(f"{emoji} **{cuaca}:** {count} kali")
