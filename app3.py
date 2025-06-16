@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import re
 
-st.set_page_config(page_title="Prediksi Cuaca", layout="wide")
+st.set_page_config(page_title="Prediksi Cuaca BMKG Bertingkat", layout="wide")
 
 def default_theme():
     default_css = """
